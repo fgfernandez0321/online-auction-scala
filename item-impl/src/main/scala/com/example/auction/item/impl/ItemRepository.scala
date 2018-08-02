@@ -3,6 +3,9 @@ package com.example.auction.item.impl
 import java.util.UUID
 
 import akka.Done
+import akka.actor.ActorSystem
+import akka.stream.ActorMaterializer
+import akka.stream.scaladsl.Sink
 import com.datastax.driver.core._
 import com.example.auction.item.api.ItemSummary
 import com.example.auction.item.api
@@ -20,7 +23,7 @@ private[impl] class ItemRepository(session: CassandraSession)(implicit ec: Execu
     for {
       count <- countItemsByCreatorInStatus(creatorId, status)
       items <- if (offset > count) Future.successful(Nil)
-        else selectItemsByCreatorInStatus(creatorId, status, offset, limit)
+        else selectItemsByCreatorInStatusWithPaging(creatorId, status, offset, limit)
     } yield {
       PaginatedSequence(items, page, pageSize, count)
     }
@@ -48,6 +51,26 @@ private[impl] class ItemRepository(session: CassandraSession)(implicit ec: Execu
       rows.drop(offset)
        .map(convertItemSummary)
     }
+  }
+
+  /**
+    * Motivation: https://discuss.lightbend.com/t/how-to-specify-pagination-for-select-query-read-side/870
+    */
+  private def selectItemsByCreatorInStatusWithPaging(creatorId: UUID, status: api.ItemStatus.Status, offset: Int, limit: Int) = {
+
+    implicit val system: ActorSystem = ActorSystem("ItemActorSystem")
+    implicit val materializer: ActorMaterializer = ActorMaterializer()
+
+    val statement = new SimpleStatement(
+      """
+          SELECT * FROM itemSummaryByCreatorAndStatus
+          WHERE creatorId = ? AND status = ?
+          ORDER BY status ASC, itemId DESC
+          LIMIT ?
+        """, creatorId, status.toString, Integer.valueOf(limit)).setFetchSize(10)
+
+    val source = session.select(statement)
+    source.drop(offset).map(convertItemSummary).runWith(Sink.seq)
   }
 
   private def convertItemSummary(item: Row): ItemSummary = {
