@@ -3,8 +3,7 @@ package com.example.auction.item.impl
 import java.util.UUID
 
 import akka.Done
-import akka.actor.ActorSystem
-import akka.stream.ActorMaterializer
+import akka.stream.Materializer
 import akka.stream.scaladsl.Sink
 import com.datastax.driver.core._
 import com.example.auction.item.api.ItemSummary
@@ -15,7 +14,7 @@ import com.lightbend.lagom.scaladsl.persistence.cassandra.{CassandraReadSide, Ca
 
 import scala.concurrent.{ExecutionContext, Future}
 
-private[impl] class ItemRepository(session: CassandraSession)(implicit ec: ExecutionContext) {
+private[impl] class ItemRepository(session: CassandraSession)(implicit ec: ExecutionContext, mat: Materializer) {
 
   def getItemsForUser(creatorId: UUID, status: api.ItemStatus.Status, page: Int, pageSize: Int): Future[PaginatedSequence[ItemSummary]] = {
     val offset = page * pageSize
@@ -57,10 +56,6 @@ private[impl] class ItemRepository(session: CassandraSession)(implicit ec: Execu
     * Motivation: https://discuss.lightbend.com/t/how-to-specify-pagination-for-select-query-read-side/870
     */
   private def selectItemsByCreatorInStatusWithPaging(creatorId: UUID, status: api.ItemStatus.Status, offset: Int, limit: Int) = {
-
-    implicit val system: ActorSystem = ActorSystem("ItemActorSystem")
-    implicit val materializer: ActorMaterializer = ActorMaterializer()
-
     val statement = new SimpleStatement(
       """
           SELECT * FROM itemSummaryByCreatorAndStatus
