@@ -102,7 +102,7 @@ class ItemEventProcessorSpec extends AsyncWordSpec with BeforeAndAfterAll with M
           val item = sampleItem(creatorId).copy(title = s"title$i")
           feed(item.id, ItemCreated(item))
         })
-        items <- itemRepository.getItemsForUser(creatorId, api.ItemStatus.Created, 2, 10)
+        items <- itemRepository.getItemsForUser(creatorId, api.ItemStatus.Created, 2, 10, 10)
       } yield {
         items.count should ===(35)
         items.page should ===(2)
@@ -115,7 +115,7 @@ class ItemEventProcessorSpec extends AsyncWordSpec with BeforeAndAfterAll with M
   }
 
   private def getItems(creatorId: UUID, itemStatus: api.ItemStatus.Status) = {
-    itemRepository.getItemsForUser(creatorId, itemStatus, 0, 10)
+    itemRepository.getItemsForUser(creatorId, itemStatus, 0, 10, 10)
   }
 
   private def feed(itemId: UUID, event: ItemEvent) = {
