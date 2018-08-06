@@ -16,13 +16,13 @@ import scala.concurrent.{ExecutionContext, Future}
 
 private[impl] class ItemRepository(session: CassandraSession)(implicit ec: ExecutionContext, mat: Materializer) {
 
-  def getItemsForUser(creatorId: UUID, status: api.ItemStatus.Status, page: Int, pageSize: Int): Future[PaginatedSequence[ItemSummary]] = {
+  def getItemsForUser(creatorId: UUID, status: api.ItemStatus.Status, page: Int, pageSize: Int, fetchSize: Int): Future[PaginatedSequence[ItemSummary]] = {
     val offset = page * pageSize
     val limit = (page + 1) * pageSize
     for {
       count <- countItemsByCreatorInStatus(creatorId, status)
       items <- if (offset > count) Future.successful(Nil)
-        else selectItemsByCreatorInStatusWithPaging(creatorId, status, offset, limit)
+        else selectItemsByCreatorInStatusWithPaging(creatorId, status, offset, limit, fetchSize)
     } yield {
       PaginatedSequence(items, page, pageSize, count)
     }
@@ -55,14 +55,14 @@ private[impl] class ItemRepository(session: CassandraSession)(implicit ec: Execu
   /**
     * Motivation: https://discuss.lightbend.com/t/how-to-specify-pagination-for-select-query-read-side/870
     */
-  private def selectItemsByCreatorInStatusWithPaging(creatorId: UUID, status: api.ItemStatus.Status, offset: Int, limit: Int) = {
+  private def selectItemsByCreatorInStatusWithPaging(creatorId: UUID, status: api.ItemStatus.Status, offset: Int, limit: Int, fetchSize: Int) = {
     val statement = new SimpleStatement(
       """
           SELECT * FROM itemSummaryByCreatorAndStatus
           WHERE creatorId = ? AND status = ?
           ORDER BY status ASC, itemId DESC
           LIMIT ?
-        """, creatorId, status.toString, Integer.valueOf(limit)).setFetchSize(10)
+        """, creatorId, status.toString, Integer.valueOf(limit)).setFetchSize(fetchSize)
 
     val source = session.select(statement)
     source.drop(offset).map(convertItemSummary).runWith(Sink.seq)
