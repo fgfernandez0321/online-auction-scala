@@ -4,17 +4,19 @@ import java.util.UUID
 
 import akka.Done
 import akka.stream.Materializer
-import akka.stream.scaladsl.Sink
 import com.datastax.driver.core._
 import com.example.auction.item.api.ItemSummary
 import com.example.auction.item.api
 import com.example.auction.utils.PaginatedSequence
 import com.lightbend.lagom.scaladsl.persistence.ReadSideProcessor
 import com.lightbend.lagom.scaladsl.persistence.cassandra.{CassandraReadSide, CassandraSession}
-
+import akka.persistence.cassandra.ListenableFutureConverter
+import collection.JavaConverters._
 import scala.concurrent.{ExecutionContext, Future}
 
 private[impl] class ItemRepository(session: CassandraSession)(implicit ec: ExecutionContext, mat: Materializer) {
+
+  var paginationStates: scala.collection.mutable.Map[Int, String] = scala.collection.mutable.Map.empty
 
   def getItemsForUser(creatorId: UUID, status: api.ItemStatus.Status, page: Int, pageSize: Int, fetchSize: Int): Future[PaginatedSequence[ItemSummary]] = {
     val offset = page * pageSize
@@ -22,7 +24,7 @@ private[impl] class ItemRepository(session: CassandraSession)(implicit ec: Execu
     for {
       count <- countItemsByCreatorInStatus(creatorId, status)
       items <- if (offset > count) Future.successful(Nil)
-        else selectItemsByCreatorInStatusWithPaging(creatorId, status, offset, limit, fetchSize)
+      else selectItemsByCreatorInStatusWithPaging(creatorId, status, page, fetchSize)
     } yield {
       PaginatedSequence(items, page, pageSize, count)
     }
@@ -55,17 +57,39 @@ private[impl] class ItemRepository(session: CassandraSession)(implicit ec: Execu
   /**
     * Motivation: https://discuss.lightbend.com/t/how-to-specify-pagination-for-select-query-read-side/870
     */
-  private def selectItemsByCreatorInStatusWithPaging(creatorId: UUID, status: api.ItemStatus.Status, offset: Int, limit: Int, fetchSize: Int) = {
+  private def selectItemsByCreatorInStatusWithPaging(creatorId: UUID,
+                                                     status: api.ItemStatus.Status,
+                                                     pageNumber: Int,
+                                                     fetchSize: Int) = {
     val statement = new SimpleStatement(
       """
           SELECT * FROM itemSummaryByCreatorAndStatus
           WHERE creatorId = ? AND status = ?
           ORDER BY status ASC, itemId DESC
-          LIMIT ?
-        """, creatorId, status.toString, Integer.valueOf(limit)).setFetchSize(fetchSize)
+          """, creatorId, status.toString)
 
-    val source = session.select(statement)
-    source.drop(offset).map(convertItemSummary).runWith(Sink.seq)
+    statement.setFetchSize(fetchSize)
+
+    session.underlying().flatMap(underlyingSession => {
+
+      if (pageNumber > 0) {
+        if (paginationStates.contains(pageNumber)) {
+          paginationStates.get(pageNumber).map(state =>
+            statement.setPagingState(PagingState.fromString(state)))
+        }
+      }
+
+      underlyingSession.executeAsync(statement).asScala map (resultSet => {
+        val pagingState = resultSet.getExecutionInfo.getPagingState
+
+        // Check against null due to Java code in `getPagingState` function
+        if (pagingState != null && !paginationStates.contains(pageNumber + 1))
+          paginationStates += (pageNumber + 1 -> pagingState.toString)
+
+        val iterator = resultSet.iterator().asScala
+        iterator.take(fetchSize).map(convertItemSummary).toSeq
+      })
+    })
   }
 
   private def convertItemSummary(item: Row): ItemSummary = {
