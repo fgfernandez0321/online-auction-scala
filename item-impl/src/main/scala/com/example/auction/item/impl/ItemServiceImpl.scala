@@ -54,8 +54,8 @@ class ItemServiceImpl(registry: PersistentEntityRegistry, itemRepository: ItemRe
     }
   }
 
-  override def getItemsForUser(id: UUID, status: api.ItemStatus.Status, pageNo: Option[Int], pageSize: Option[Int]) = ServiceCall { _ =>
-    itemRepository.getItemsForUser(id, status, pageNo.getOrElse(0), pageSize.getOrElse(DefaultPageSize), DefaultFetchSize)
+  override def getItemsForUser(id: UUID, status: api.ItemStatus.Status, page: Option[String]) = ServiceCall { _ =>
+    itemRepository.getItemsForUser(id, status, page, DefaultFetchSize)
   }
 
   override def itemEvents = TopicProducer.taggedStreamWithOffset(ItemEvent.Tag.allTags.toList) { (tag, offset) =>

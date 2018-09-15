@@ -117,7 +117,7 @@ class ItemEventProcessorSpec extends AsyncWordSpec with BeforeAndAfterAll with M
   }
 
   private def getItems(creatorId: UUID, itemStatus: api.ItemStatus.Status) = {
-    itemRepository.getItemsForUser(creatorId, itemStatus, 0, 10, 10)
+    itemRepository.getItemsForUser(creatorId, itemStatus, None, 10)
   }
 
   private def feed(itemId: UUID, event: ItemEvent) = {
