@@ -16,6 +16,7 @@ trait ItemService extends Service {
     * @return The created item with its ID populated.
     */
   def createItem: ServiceCall[Item, Item]
+  def myCreateItem: ServiceCall[Item, Item]
 
   /**
     * Start an auction for an item.
@@ -53,6 +54,7 @@ trait ItemService extends Service {
 
     named("item").withCalls(
       pathCall("/api/item", createItem),
+      restCall(Method.POST, "/api/item/create/new/testing", myCreateItem),
       restCall(Method.POST, "/api/item/:id/start", startAuction _),
       pathCall("/api/item/:id", getItem _),
       pathCall("/api/item?userId&status&page", getItemsForUser _)

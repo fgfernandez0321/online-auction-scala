@@ -12,6 +12,7 @@ import com.lightbend.lagom.scaladsl.api.transport.{Forbidden, NotFound}
 import com.lightbend.lagom.scaladsl.broker.TopicProducer
 import com.lightbend.lagom.scaladsl.persistence.{EventStreamElement, PersistentEntityRegistry}
 import com.lightbend.lagom.scaladsl.server.ServerServiceCall
+import java.time.{Duration, Instant}
 
 import scala.concurrent.{ExecutionContext, Future}
 
@@ -32,6 +33,9 @@ class ItemServiceImpl(registry: PersistentEntityRegistry, itemRepository: ItemRe
   private val DefaultFetchSize = 10
 
   override def createItem = authenticated(userId => ServerServiceCall { item =>
+
+    println(s"==========================> Hi from createItem: $item")
+
     if (userId != item.creator) {
       throw Forbidden("User " + userId + " can't created an item on behalf of " + item.creator)
     }
@@ -43,11 +47,36 @@ class ItemServiceImpl(registry: PersistentEntityRegistry, itemRepository: ItemRe
     }
   })
 
+  override def myCreateItem = { item =>
+
+//    println(s"==========================> Hi from myCreateItem: $item")
+
+    val itemId = UUIDs.timeBased()
+    val pItem = Item(
+      itemId,
+      item.creator,
+      item.title,
+      item.description,
+      item.currencyId,
+      item.increment,
+      item.reservePrice,
+      None,
+      ItemStatus.Created,
+      Duration.ofHours(5),
+      None,
+      None,
+      None
+    )
+
+    entityRef(itemId).ask(CreateItem(pItem)).map { _ => convertItem(pItem) }
+  }
+
   override def startAuction(id: UUID) = authenticated(userId => ServerServiceCall { _ =>
     entityRef(id).ask(StartAuction(userId))
   })
 
   override def getItem(id: UUID) = ServerServiceCall { _ =>
+    println(s"==========================> Hi from getItem")
     entityRef(id).ask(GetItem).map {
       case Some(item) => convertItem(item)
       case None => throw NotFound("Item " + id + " not found");
@@ -55,6 +84,7 @@ class ItemServiceImpl(registry: PersistentEntityRegistry, itemRepository: ItemRe
   }
 
   override def getItemsForUser(id: UUID, status: api.ItemStatus.Status, page: Option[String]) = ServiceCall { _ =>
+    println(s"==========================> Hi from getItemsForUser")
     itemRepository.getItemsForUser(id, status, page, DefaultFetchSize)
   }
 
